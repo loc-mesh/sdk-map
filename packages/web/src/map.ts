@@ -18,10 +18,27 @@
  * surface rather than a platform one — design ADR 0059 §4 and `scope.md`.
  */
 
-// ⚠️ Named imports, not a default. MapLibre dropped its default export in v6;
-// `import maplibregl from "maplibre-gl"` compiles under older typings and is
-// undefined at runtime, which fails as "maplibregl.Map is not a constructor"
-// at the one moment you are trying to draw a map.
+// 🔴 MAPLIBRE 5, NOT 6, AND THE PIN IS LOAD-BEARING. Version 6 moved the web
+// worker into a separate file whose name it computes at runtime
+// (`dev ? "maplibre-gl-worker-dev.mjs" : "maplibre-gl-worker.mjs"`). A bundler
+// cannot statically see that, so it never emits the file — and the failure is
+// vicious: a dev server resolves it fine, a production build does not, and the
+// missing path is answered by the single-page-app fallback with index.html and
+// a 200. MapLibre reports "Worker failed to load", the map draws nothing, and
+// the network tab shows no failed request at all.
+//
+// Measured 2026-10-16 against the published package in a stock Vite app:
+// with 6.14.0, 0 layers drew; with 5.24.0, 52 drew and 29 street names
+// rendered. Version 5 inlines the worker, so any bundler produces a working
+// build with no configuration from the customer — which is the entire job of
+// this package.
+//
+// ⚠️ Do not widen this range to `^5 || ^6` hoping for the best. npm would
+// resolve 6 and every consumer would get a blank map.
+//
+// ⚠️ Named import, never a default: v6 removed the default export, and if this
+// package ever does move to 6 the default form compiles and is undefined at
+// runtime.
 import { Map as MapLibreMap } from 'maplibre-gl';
 
 /** The style document shape, taken from the library rather than named separately. */
