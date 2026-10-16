@@ -15,17 +15,17 @@ exists from the first commit rather than from the day someone remembers.
 
 | Package | Licence | Why we depend on it |
 |---|---|---|
-| [`maplibre-gl`](https://github.com/maplibre/maplibre-gl-js) | BSD-3-Clause | Renders the map. ⚠️ **MapLibre, never Mapbox GL JS v2 or later** — the latter requires a billed Mapbox account even when pointed at our own tiles, which would defeat the entire point of self-hosting the map. Pinned by `loc-mesh/design` ADR 0039. |
+| [`maplibre-gl`](https://github.com/maplibre/maplibre-gl-js) **5.x** | BSD-3-Clause | Renders the map. ⚠️ **Pinned to 5, deliberately** — 6 moved the web worker into a separate file whose name it computes at runtime, which bundlers cannot emit; see `src/map.ts`. ⚠️ **MapLibre, never Mapbox GL JS v2 or later** — the latter requires a billed Mapbox account even when pointed at our own tiles, which would defeat the entire point of self-hosting the map. Pinned by `loc-mesh/design` ADR 0039. |
 
 ## Transitive dependencies
 
-Audited 2026-10-16 across the whole declared tree of `maplibre-gl` 6.x. **No
+Audited 2026-10-16 across the whole declared tree of `maplibre-gl` 5.x (20 packages). **No
 copyleft or share-alike licence appears anywhere** — no GPL, LGPL, AGPL, MPL or
 SSPL.
 
 | Licence | Packages |
 |---|---|
-| ISC | `earcut`, `kdbush`, `potpack`, `tinyqueue`, `quickselect`, `@maplibre/geojson-vt`, `@mapbox/point-geometry`, `@maplibre/maplibre-gl-style-spec` |
+| ISC | 9 packages including `earcut`, `kdbush`, `potpack`, `tinyqueue`, `quickselect`, `@maplibre/geojson-vt`, `@mapbox/point-geometry`, `@maplibre/maplibre-gl-style-spec` |
 | MIT | `bidi-js`, `gl-matrix`, `murmurhash-js`, `@types/geojson`, `@maplibre/vt-pbf` |
 | BSD-3-Clause | `maplibre-gl`, `pbf`, `@mapbox/vector-tile` |
 | BSD-2-Clause | `@mapbox/tiny-sdf`, `@mapbox/unitbezier` |
