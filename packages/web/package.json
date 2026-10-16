@@ -1,0 +1,43 @@
+{
+  "name": "@locate2u/mesh-map",
+  "version": "0.1.0-beta.0",
+  "description": "The Locate2u Mesh map control. Put a map on a page with your Mesh map key — themes, credentials, attribution and error reporting handled.",
+  "keywords": ["locate2u", "mesh", "map", "maplibre", "openstreetmap", "logistics", "delivery", "web-component"],
+  "homepage": "https://github.com/loc-mesh/sdk-map/tree/main/packages/web#readme",
+  "bugs": { "url": "https://github.com/loc-mesh/sdk-map/issues" },
+  "repository": { "type": "git", "url": "git+https://github.com/loc-mesh/sdk-map.git", "directory": "packages/web" },
+  "license": "MIT",
+  "author": "Locate2u <engineering@locate2u.com> (https://locate2u.com)",
+  "publisher": "Locate2u",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
+    "./element": { "types": "./dist/element.d.ts", "import": "./dist/element.js" }
+  },
+  "files": ["dist", "README.md", "LICENSE", "THIRD-PARTY-NOTICES.md"],
+  "sideEffects": ["./dist/element.js"],
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "prepack": "npm run build",
+    "verify-publish": "npm pack --dry-run && npm publish --dry-run --tag beta"
+  },
+  "dependencies": {
+    "maplibre-gl": "^6.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.10",
+    "typescript": "^5.5.3",
+    "vitest": "^2.1.8"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": false,
+    "tag": "beta"
+  }
+}

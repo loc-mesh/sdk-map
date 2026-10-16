@@ -1,0 +1,63 @@
+name: publish-web
+
+# Publishes @locate2u/mesh-map to npm.
+#
+# 🔴 THIS WILL FAIL UNTIL TWO THINGS EXIST, AND BOTH ARE AN OPERATOR'S TO
+# CREATE. Verified 2026-10-16: the `@locate2u` npm scope is NOT REGISTERED, and
+# this repository holds no NPM_TOKEN. Nothing here needs changing when they are
+# in place; it simply starts passing. ADR 0059 §6.
+#
+# ⚠️ Manual dispatch only. A package that publishes on every merge to main
+# publishes a mistake on every merge to main, and a version cannot be
+# unpublished after 72 hours.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: npm dist-tag
+        type: choice
+        options: [beta, latest]
+        default: beta
+
+permissions:
+  contents: read
+  # Required for npm provenance, which signs the package with a link back to
+  # the workflow run that built it. Turn `provenance` on in package.json once
+  # the scope exists and the first publish has succeeded.
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+          cache: "npm"
+          cache-dependency-path: packages/web/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+      # ⚠️ `latest` is what an unqualified `npm install` resolves to. Refusing
+      # to point it at a prerelease is what stops a 0.x beta becoming the
+      # default install for everyone who ever types the package name.
+      - name: Refuse to tag a prerelease as latest
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          if [ "${{ inputs.tag }}" = "latest" ] && echo "$VERSION" | grep -q -- "-"; then
+            echo "::error::$VERSION is a prerelease and cannot be published as 'latest'."
+            exit 1
+          fi
+          echo "Publishing $VERSION under '${{ inputs.tag }}'."
+
+      - run: npm publish --tag ${{ inputs.tag }} --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
