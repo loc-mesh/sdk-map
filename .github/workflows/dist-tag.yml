@@ -1,0 +1,64 @@
+name: dist-tag
+
+# Repoints an npm dist-tag at a version that is already published.
+#
+# 🔴 WHY THIS EXISTS. npm sets `latest` on a package's FIRST publish whatever
+# `--tag` says, because a package must have one. So `@locate2u/mesh-map@latest`
+# — which is what a bare `npm install @locate2u/mesh-map` resolves to — pointed
+# at 0.1.0-beta.0 for three days, the version whose map draws nothing. The
+# `beta` tag was correct the whole time and nobody installs by tag.
+#
+# ⚠️ The publish workflow cannot fix this. It guards against promoting a
+# prerelease to `latest` DELIBERATELY, and this was npm doing it implicitly.
+# Repointing is a separate, auditable act with its own run record.
+#
+# The token lives in Actions, not on anyone's laptop, so this is also how a
+# dist-tag gets moved without a human holding a publishing credential.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Already-published version to point at, e.g. 0.1.0-beta.1
+        required: true
+      tag:
+        description: Which dist-tag to move
+        type: choice
+        options: [latest, beta]
+        default: latest
+
+permissions:
+  contents: read
+
+jobs:
+  retag:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+
+      # ⚠️ Refuse to point a tag at something that is not there. `npm dist-tag
+      # add` on a missing version fails anyway, but failing here says why.
+      - name: Check the version exists
+        run: |
+          NAME=$(node -p "require('./package.json').name")
+          if ! npm view "$NAME@${{ inputs.version }}" version >/dev/null 2>&1; then
+            echo "::error::$NAME@${{ inputs.version }} is not published. Publish it before tagging it."
+            exit 1
+          fi
+          echo "$NAME@${{ inputs.version }} exists."
+
+      - name: Move the tag
+        run: |
+          NAME=$(node -p "require('./package.json').name")
+          npm dist-tag add "$NAME@${{ inputs.version }}" ${{ inputs.tag }}
+          echo "--- tags now ---"
+          npm dist-tag ls "$NAME"
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
