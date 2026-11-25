@@ -110,6 +110,15 @@ onError: (e) => {
 
 Credentials are stripped from every error before it reaches you.
 
+### When the service says "too many"
+
+If the tiles service answers 429, the control stops requesting map squares for
+ten seconds — however much the person drags — then sends one request to check.
+If that is refused it waits another ten seconds; if it succeeds, loading
+resumes on its own. While it waits, a short notice over the map says so and
+counts down. Restyle it with the `.mesh-map-notice` class, or turn it off with
+`rateLimitNotice: false` (requests still pause either way).
+
 With the custom element, the same thing arrives as a DOM event:
 
 ```js
