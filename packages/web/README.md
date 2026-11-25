@@ -102,6 +102,7 @@ onError: (e) => {
   //   discovery_failed      could not ask the service what it serves
   //   tile_unreadable       a square arrived and could not be parsed
   //   quota_exceeded        over the allowance for this period
+  //   rate_limited          too many squares in the last minute; clears itself
   //   token_refresh_failed  the map will go dark when the current token expires
   // e.fatal says whether the map is still usable.
 }
