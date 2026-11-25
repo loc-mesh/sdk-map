@@ -1,6 +1,6 @@
 {
   "name": "@locate2u/mesh-map",
-  "version": "0.1.0-beta.1",
+  "version": "0.1.0-beta.2",
   "description": "The Locate2u Mesh map control. Put a map on a page with your Mesh map key — themes, credentials, attribution and error reporting handled.",
   "keywords": [
     "locate2u",

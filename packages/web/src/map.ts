@@ -47,6 +47,8 @@ import { Credential, transformRequest, type TokenMinter } from './credentials.js
 import { discover, type Published } from './discovery.js';
 import { classify, type MeshMapError } from './errors.js';
 import { themeFor, type Theme } from './theme.js';
+import { gate, type GateState } from './pause.js';
+import { registerTileProtocol, rewrite } from './tile-fetch.js';
 
 export interface MeshMapOptions {
   /** The element to draw in, or its id. */
@@ -86,6 +88,13 @@ export interface MeshMapOptions {
   /** Pin to a particular published region instead of the first one offered. */
   region?: string;
 
+  /**
+   * Show a short notice over the map while tile requests are paused because the
+   * service answered 429. On by default. Requests pause either way; this only
+   * controls whether the person looking at the map is told why.
+   */
+  rateLimitNotice?: boolean;
+
   /** Told why the map is not drawing. Strongly recommended — see `errors.ts`. */
   onError?: (error: MeshMapError) => void;
 }
@@ -105,6 +114,9 @@ export class MeshMap {
   private theme: Theme;
   private autoThemeTimer: ReturnType<typeof setInterval> | undefined;
   private disposed = false;
+  private notice: HTMLDivElement | undefined;
+  private noticeTimer: ReturnType<typeof setInterval> | undefined;
+  private unsubscribeGate: (() => void) | undefined;
 
   private constructor(args: {
     map: MapLibreMap;
@@ -171,7 +183,7 @@ export class MeshMap {
       // lost by somebody who never knew it was required. Compact is permitted:
       // the OSMF guidelines allow it behind an information icon.
       attributionControl: { compact: true },
-      transformRequest: transformRequest(origin, () => credential.current),
+      transformRequest: gatedTransform(transformRequest(origin, () => credential.current), origin),
     });
 
     const self = new MeshMap({ map, published, credential, origin, theme, options, onError });
@@ -180,6 +192,8 @@ export class MeshMap {
     // into one sentence. MapLibre reports tile parse failures on this event and
     // nowhere else, and only if something is listening.
     map.on('error', (e: unknown) => self.onError(classify((e as { error?: unknown })?.error ?? e)));
+
+    self.unsubscribeGate = gate.subscribe((state, resumesAt) => self.onGate(state, resumesAt));
 
     if (options.autoTheme && pair) self.startAutoTheme(pair);
     return self;
@@ -214,8 +228,58 @@ export class MeshMap {
     if (this.disposed) return;
     this.disposed = true;
     if (this.autoThemeTimer) clearInterval(this.autoThemeTimer);
+    this.unsubscribeGate?.();
+    this.hideNotice();
     this.credential.dispose();
     this.map.remove();
+  }
+
+  private onGate(state: GateState, resumesAt: number | undefined): void {
+    if (this.disposed) return;
+    if (state === 'open') return this.hideNotice();
+    if (state !== 'paused' || this.options.rateLimitNotice === false) return;
+    this.showNotice(resumesAt ?? Date.now());
+  }
+
+  /** A plain notice over the map; the page can restyle it through `.mesh-map-notice`. */
+  private showNotice(resumesAt: number): void {
+    if (!this.notice) {
+      const el = document.createElement('div');
+      el.className = 'mesh-map-notice';
+      el.setAttribute('role', 'status');
+      el.setAttribute('aria-live', 'polite');
+      Object.assign(el.style, {
+        position: 'absolute',
+        top: '12px',
+        left: '50%',
+        transform: 'translateX(-50%)',
+        zIndex: '10',
+        padding: '8px 14px',
+        borderRadius: '6px',
+        background: 'rgba(11, 15, 26, 0.85)',
+        color: '#fff',
+        font: '14px/1.4 system-ui, sans-serif',
+        pointerEvents: 'none',
+        whiteSpace: 'nowrap',
+      });
+      this.map.getContainer().appendChild(el);
+      this.notice = el;
+    }
+    const el = this.notice;
+    const render = () => {
+      const s = Math.max(1, Math.ceil((resumesAt - Date.now()) / 1000));
+      el.textContent = `Too many map requests. Trying again in ${s} second${s === 1 ? '' : 's'}…`;
+    };
+    render();
+    if (this.noticeTimer) clearInterval(this.noticeTimer);
+    this.noticeTimer = setInterval(render, 1000);
+  }
+
+  private hideNotice(): void {
+    if (this.noticeTimer) clearInterval(this.noticeTimer);
+    this.noticeTimer = undefined;
+    this.notice?.remove();
+    this.notice = undefined;
   }
 
   private startAutoTheme(pair: { day: Theme; night: Theme }): void {
@@ -228,6 +292,23 @@ export class MeshMap {
       if (want !== this.theme) void this.setTheme(want);
     }, 5 * 60 * 1000);
   }
+}
+
+/**
+ * Route map squares for the tiles service through the gated fetch in
+ * `tile-fetch.ts`, after the credential has been added. Everything else — the
+ * style, fonts, icons, any third-party source — goes untouched.
+ */
+function gatedTransform(
+  inner: (url: string) => { url: string },
+  origin: string,
+): (url: string, resourceType?: string) => { url: string } {
+  registerTileProtocol();
+  return (url, resourceType) => {
+    const out = inner(url);
+    if (resourceType === 'Tile' && url.startsWith(origin)) return { url: rewrite(out.url) };
+    return out;
+  };
 }
 
 function resolvePair(auto: MeshMapOptions['autoTheme']): { day: Theme; night: Theme } | undefined {
