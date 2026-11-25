@@ -45,7 +45,8 @@ describe('classify', () => {
   it('knows an environment with no map published from one that is over quota', () => {
     expect(classify({ status: 503, message: 'no data' }).code).toBe('no_map_data');
     expect(classify({ status: 503, message: 'no data' }).fatal).toBe(true);
-    expect(classify({ status: 429, message: 'slow down' }).code).toBe('quota_exceeded');
+    expect(classify({ status: 429, message: 'slow down' }).code).toBe('rate_limited');
+    expect(classify({ status: 429, message: 'quota_exceeded' }).code).toBe('quota_exceeded');
     expect(classify({ status: 429, message: 'slow down' }).fatal).toBe(false);
   });
 

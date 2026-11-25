@@ -27,6 +27,8 @@ export type MeshMapErrorCode =
   | 'tile_unreadable'
   /** The tenant is over its allowance for this period. */
   | 'quota_exceeded'
+  /** This browser asked for map squares faster than the per-minute limit allows. Clears within a minute. */
+  | 'rate_limited'
   /** Minting a short-lived map token failed, so the map cannot keep refreshing. */
   | 'token_refresh_failed'
   /** Anything else, with the original attached. */
@@ -99,9 +101,16 @@ export function classify(raw: unknown): MeshMapError {
   }
 
   if (status === 429) {
+    // ⚠️ 429 has two causes with opposite fixes: the per-minute brake (wait a
+    // minute) and the monthly allowance (talk to Locate2u). The map library
+    // usually hides the response body, so only claim the allowance when the
+    // service said so; the brake is by far the commoner cause.
+    const quota = /quota_exceeded|allowance/i.test(message);
     return {
-      code: 'quota_exceeded',
-      message: 'This tenant is over its map allowance for the current period.',
+      code: quota ? 'quota_exceeded' : 'rate_limited',
+      message: quota
+        ? 'This tenant is over its map allowance for the current period.'
+        : 'Map squares were requested faster than the per-minute limit allows. Loading resumes within a minute.',
       status,
       url,
       fatal: false,
