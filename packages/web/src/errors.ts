@@ -31,6 +31,12 @@ export type MeshMapErrorCode =
   | 'rate_limited'
   /** Minting a short-lived map token failed, so the map cannot keep refreshing. */
   | 'token_refresh_failed'
+  /** The theme named is not one the service offers. The default was painted instead. */
+  | 'unknown_theme'
+  /** A theme file could not be fetched or read. The default was painted instead. */
+  | 'theme_unreadable'
+  /** Some colours in a theme could not be used — a misspelt name or an unreadable colour. The rest were applied. */
+  | 'theme_colours_ignored'
   /** Anything else, with the original attached. */
   | 'unknown';
 
