@@ -35,7 +35,7 @@ export {
   type MapGeoJSONFeature,
   type GeoJSONSource,
 } from 'maplibre-gl';
-export { discover, type Published } from './discovery.js';
+export { discover, regionAt, type Published, type RegionInfo } from './discovery.js';
 export { Credential, type TokenMinter, type MintedToken } from './credentials.js';
 export {
   classify,
