@@ -6,8 +6,6 @@
 npm install @locate2u/mesh-map
 ```
 
-> 🚧 **Beta.** Published under the `beta` tag while the interface settles. Pin an exact version until this reaches 1.0.
-
 ## The smallest thing that works
 
 ```html

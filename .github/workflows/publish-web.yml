@@ -29,7 +29,7 @@ on:
         description: npm dist-tag to publish under, or to move
         type: choice
         options: [beta, latest]
-        default: beta
+        default: latest
       version:
         description: retag only — already-published version to point the tag at, e.g. 0.1.0-beta.2
         required: false

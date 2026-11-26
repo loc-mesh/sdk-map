@@ -1,6 +1,6 @@
 {
   "name": "@locate2u/mesh-map",
-  "version": "0.1.0-beta.2",
+  "version": "1.0.0",
   "description": "The Locate2u Mesh map control. Put a map on a page with your Mesh map key — themes, credentials, attribution and error reporting handled.",
   "keywords": [
     "locate2u",
@@ -55,7 +55,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "prepack": "npm run build",
-    "verify-publish": "npm pack --dry-run && npm publish --dry-run --tag beta"
+    "verify-publish": "npm pack --dry-run && npm publish --dry-run --tag latest"
   },
   "dependencies": {
     "maplibre-gl": "^5.24.0"
@@ -67,6 +67,6 @@
   },
   "publishConfig": {
     "access": "public",
-    "tag": "beta"
+    "tag": "latest"
   }
 }

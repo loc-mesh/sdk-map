@@ -4,7 +4,7 @@
 
 | Platform | Package | Registry | Status |
 |---|---|---|---|
-| Browser | [`@locate2u/mesh-map`](packages/web) | npm | 🚧 beta |
+| Browser | [`@locate2u/mesh-map`](packages/web) | npm | ✅ 1.0 |
 | Android | `com.locate2u:mesh-map` | Maven Central | reserved, not built |
 | WPF | `Locate2u.Mesh.Map` | NuGet | reserved, not built |
 
