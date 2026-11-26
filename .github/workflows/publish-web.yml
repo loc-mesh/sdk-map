@@ -1,11 +1,17 @@
 name: publish-web
 
-# Publishes @locate2u/mesh-map to npm.
+# Publishes @locate2u/mesh-map to npm, or moves one of its dist-tags.
 #
-# 🔴 THIS WILL FAIL UNTIL TWO THINGS EXIST, AND BOTH ARE AN OPERATOR'S TO
-# CREATE. Verified 2026-10-16: the `@locate2u` npm scope is NOT REGISTERED, and
-# this repository holds no NPM_TOKEN. Nothing here needs changing when they are
-# in place; it simply starts passing. ADR 0059 §6.
+# 🔑 NO TOKEN. npm trusts this workflow file by name (Trusted Publisher on the
+# package, set up 2026-11-26 with both `npm publish` and `npm dist-tag`
+# allowed). Each run swaps a GitHub OIDC token for a short-lived npm one, so
+# there is nothing to expire or leak. The NPM_TOKEN secret this used to read
+# expired and failed the 0.1.0-beta.2 publish with a 404.
+#
+# ⚠️ The trust is bound to THIS FILENAME. Renaming the file, or moving the
+# publish or retag steps into another workflow, breaks publishing until the
+# Trusted Publisher entry on npmjs.com is changed to match. That is why moving
+# a dist-tag lives here and not in a workflow of its own.
 #
 # ⚠️ Manual dispatch only. A package that publishes on every merge to main
 # publishes a mistake on every merge to main, and a version cannot be
@@ -14,21 +20,29 @@ name: publish-web
 on:
   workflow_dispatch:
     inputs:
+      action:
+        description: publish the version in package.json, or retag an already-published version
+        type: choice
+        options: [publish, retag]
+        default: publish
       tag:
-        description: npm dist-tag
+        description: npm dist-tag to publish under, or to move
         type: choice
         options: [beta, latest]
         default: beta
+      version:
+        description: retag only — already-published version to point the tag at, e.g. 0.1.0-beta.2
+        required: false
 
 permissions:
   contents: read
-  # Required for npm provenance, which signs the package with a link back to
-  # the workflow run that built it. Turn `provenance` on in package.json once
-  # the scope exists and the first publish has succeeded.
+  # The OIDC token npm exchanges for publish rights. Also what lets npm sign
+  # the package with provenance pointing back at this run.
   id-token: write
 
 jobs:
   publish:
+    if: inputs.action == 'publish'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -37,10 +51,12 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"
           registry-url: "https://registry.npmjs.org"
           cache: "npm"
           cache-dependency-path: packages/web/package-lock.json
+      # Trusted publishing needs npm 11.5.1 or later.
+      - run: npm install -g npm@latest
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
@@ -59,5 +75,43 @@ jobs:
           echo "Publishing $VERSION under '${{ inputs.tag }}'."
 
       - run: npm publish --tag ${{ inputs.tag }} --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  # 🔴 WHY RETAG EXISTS. npm sets `latest` on a package's FIRST publish whatever
+  # `--tag` says, so `@locate2u/mesh-map@latest` — what a bare `npm install`
+  # resolves to — pointed at 0.1.0-beta.0, whose map draws nothing, for three
+  # days. Repointing a tag is a separate, auditable act with its own run record.
+  retag:
+    if: inputs.action == 'retag'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+      - run: npm install -g npm@latest
+
+      # ⚠️ Refuse to point a tag at something that is not there. `npm dist-tag
+      # add` on a missing version fails anyway, but failing here says why.
+      - name: Check the version exists
+        run: |
+          NAME=$(node -p "require('./package.json').name")
+          if [ -z "${{ inputs.version }}" ]; then
+            echo "::error::retag needs a version."
+            exit 1
+          fi
+          if ! npm view "$NAME@${{ inputs.version }}" version >/dev/null 2>&1; then
+            echo "::error::$NAME@${{ inputs.version }} is not published. Publish it before tagging it."
+            exit 1
+          fi
+          echo "$NAME@${{ inputs.version }} exists."
+
+      - name: Move the tag
+        run: |
+          NAME=$(node -p "require('./package.json').name")
+          npm dist-tag add "$NAME@${{ inputs.version }}" ${{ inputs.tag }}
+          echo "--- tags now ---"
+          npm dist-tag ls "$NAME"
