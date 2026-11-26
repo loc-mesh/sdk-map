@@ -72,7 +72,7 @@ export interface MeshMapControls {
   scale?: ControlSetting;
 }
 import { Credential, transformRequest, type TokenMinter } from './credentials.js';
-import { discover, type Published } from './discovery.js';
+import { discover, regionAt, type Published } from './discovery.js';
 import { classify, type MeshMapError } from './errors.js';
 import { themeFor, type Theme, type ThemeColours, type ThemeSetting } from './theme.js';
 import { gate, type GateState } from './pause.js';
@@ -120,7 +120,10 @@ export interface MeshMapOptions {
   /** Extruded buildings. Needs tilt and zoom 14+ to show anything. */
   buildings3d?: boolean;
 
-  /** Pin to a particular published region instead of the first one offered. */
+  /**
+   * Pin to one published region. Left out, the map shows the region containing
+   * its centre and switches region as the person pans from one to another.
+   */
   region?: string;
 
   /**
@@ -144,8 +147,12 @@ export interface MeshMapOptions {
 export class MeshMap {
   /** The MapLibre map, for anything this control does not wrap. */
   readonly map: MapLibreMap;
-  /** What the service said it had when this session started. */
-  readonly published: Published;
+  /** What the service said it has, and the region currently shown. */
+  get published(): Published {
+    return this._published;
+  }
+  private _published: Published;
+  private painted: Painted = {};
 
   private readonly credential: Credential;
   private readonly origin: string;
@@ -174,7 +181,7 @@ export class MeshMap {
     onError: (e: MeshMapError) => void;
   }) {
     this.map = args.map;
-    this.published = args.published;
+    this._published = args.published;
     this.credential = args.credential;
     this.origin = args.origin;
     this.theme = args.theme;
@@ -203,7 +210,7 @@ export class MeshMap {
 
     const baseUrl = options.tilesBaseUrl.replace(/\/$/, '');
     const origin = new URL(baseUrl).origin;
-    const published = await discover(baseUrl, { region: options.region });
+    const published = await discover(baseUrl, { region: options.region, near: options.center });
 
     const credential = options.mapKey
       ? Credential.fromKey(options.mapKey, onError)
@@ -233,6 +240,15 @@ export class MeshMap {
     });
 
     const self = new MeshMap({ map, published, credential, origin, theme, options, onError });
+    self.painted = painted;
+
+    // 🔴 FOLLOW THE VIEW ACROSS REGIONS, unless the page pinned one. Each region
+    // is a separate map build, so a map that started over Sydney and is panned
+    // to London would otherwise show London as empty ocean. Checked when a move
+    // ENDS, never during one: a style swap mid-drag would stall the gesture.
+    if (!options.region && published.regions.length > 1) {
+      map.on('moveend', () => void self.followRegion());
+    }
 
     // ⚠️ The handler that would have turned 2026-10-16's blank grey rectangle
     // into one sentence. MapLibre reports tile parse failures on this event and
@@ -262,7 +278,35 @@ export class MeshMap {
     this.theme = theme;
     const painted = await resolveTheme(theme, this.published, this.onError);
     if (this.disposed) return;
-    const url = styleUrl(this.options.tilesBaseUrl.replace(/\/$/, ''), this.published, painted, this.options);
+    this.painted = painted;
+    await this.restyle();
+  }
+
+  /** The region currently shown. */
+  get region(): string {
+    return this._published.region;
+  }
+
+  /** Show another published region. Keeps the theme and your own layers. */
+  async setRegion(region: string): Promise<void> {
+    const next = this._published.regions.find((r) => r.region === region);
+    if (this.disposed || !next || next.region === this._published.region) return;
+    this._published = { ...this._published, region: next.region, version: next.version };
+    await this.restyle();
+  }
+
+  private async followRegion(): Promise<void> {
+    const c = this.map.getCenter();
+    const current = this._published.regions.find((r) => r.region === this._published.region);
+    const inside = (b: [number, number, number, number] | null) =>
+      !!b && c.lng >= b[0] && c.lng <= b[2] && c.lat >= b[1] && c.lat <= b[3];
+    if (inside(current?.bounds ?? null)) return;
+    const there = regionAt(this._published.regions, c.lng, c.lat);
+    if (there) await this.setRegion(there.region);
+  }
+
+  private async restyle(): Promise<void> {
+    const url = styleUrl(this.options.tilesBaseUrl.replace(/\/$/, ''), this._published, this.painted, this.options);
     // 🔴 THE PAGE'S OWN LAYERS MUST SURVIVE THIS. A new style replaces every
     // source, layer and image on the map, so before 1.1.0 a theme switch —
     // including the automatic one at dusk — silently removed every pin a page

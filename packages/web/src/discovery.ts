@@ -17,7 +17,17 @@
 
 import { classify, type MeshMapError } from './errors.js';
 
+/** One region the service serves, with the box it covers. */
+export interface RegionInfo {
+  region: string;
+  version: string;
+  /** [west, south, east, north]; null from a service too old to say. */
+  bounds: [number, number, number, number] | null;
+}
+
 export interface Published {
+  /** Every region this environment serves. */
+  regions: RegionInfo[];
   region: string;
   /** The explicit build version, never the word "current" — see `pin`. */
   version: string;
@@ -32,6 +42,19 @@ export interface Published {
 interface RegionRow {
   region?: unknown;
   currentVersion?: unknown;
+  bounds?: unknown;
+}
+
+const asBounds = (b: unknown): RegionInfo['bounds'] =>
+  Array.isArray(b) && b.length === 4 && b.every((n) => typeof n === 'number')
+    ? (b as [number, number, number, number])
+    : null;
+
+/** The region whose box contains a point, or undefined. */
+export function regionAt(regions: RegionInfo[], lng: number, lat: number): RegionInfo | undefined {
+  return regions.find(
+    (r) => r.bounds && lng >= r.bounds[0] && lng <= r.bounds[2] && lat >= r.bounds[1] && lat <= r.bounds[3],
+  );
 }
 
 /**
@@ -46,7 +69,7 @@ interface RegionRow {
  */
 export async function discover(
   baseUrl: string,
-  opts: { region?: string; fetchImpl?: typeof fetch } = {},
+  opts: { region?: string; near?: [number, number]; fetchImpl?: typeof fetch } = {},
 ): Promise<Published> {
   const doFetch = opts.fetchImpl ?? fetch;
   let body: Record<string, unknown>;
@@ -74,9 +97,17 @@ export async function discover(
   }
 
   const rows = Array.isArray(body.regions) ? (body.regions as RegionRow[]) : [];
+  const regions: RegionInfo[] = rows
+    .filter((r) => typeof r.region === 'string' && typeof r.currentVersion === 'string')
+    .map((r) => ({ region: r.region as string, version: r.currentVersion as string, bounds: asBounds(r.bounds) }));
+  // 🔴 WITH SEVERAL REGIONS, "THE FIRST ONE" IS AN ACCIDENT OF ORDERING. A page
+  // that names none is given the region containing the point it starts at, and
+  // only falls back to the first when no region contains it (or the service is
+  // too old to publish bounds).
+  const near = opts.near ? regionAt(regions, opts.near[0], opts.near[1]) : undefined;
   const wanted = opts.region
     ? rows.find((r) => String(r.region) === opts.region)
-    : rows[0];
+    : (rows.find((r) => r.region === near?.region) ?? rows[0]);
 
   if (!wanted || typeof wanted.region !== 'string' || typeof wanted.currentVersion !== 'string') {
     const available = rows.map((r) => String(r.region)).filter(Boolean);
@@ -98,6 +129,7 @@ export async function discover(
   const themes = block?.available;
 
   return {
+    regions,
     region: wanted.region,
     version: wanted.currentVersion,
     themes: Array.isArray(themes) ? themes.map(String) : [],

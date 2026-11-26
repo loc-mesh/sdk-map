@@ -148,9 +148,13 @@ document.addEventListener('mesh-map-error', (e) => console.warn(e.detail.code));
 | `autoTheme` | `auto-theme` | off | Day/night at civil twilight |
 | `pois` | `pois` | `true` | Shop and café labels |
 | `buildings3d` | `buildings-3d` | `false` | Needs tilt and zoom 14+ |
-| `region` | `region` | first published | Pin to a named region |
+| `region` | `region` | the region at `center` | Pin to one region; left out, the map follows the view between regions |
 | `controls` | `navigation-control`, `fullscreen-control`, `geolocate-control`, `scale-control` | none | Standard buttons, each in the corner you name |
 | `onError` | — | logs | Strongly recommended |
+
+## Regions
+
+Each region the platform serves (Australia, the United Kingdom and Japan today) is a separate map build. **Leave `region` out** and the map shows the region containing its `center`, and switches when the person pans into another region; your own layers and the theme are kept. **Set `region`** to stay on one. `map.region` says which is shown, `map.setRegion(name)` changes it, and `map.published.regions` lists them with their bounds.
 
 ## Buttons, and which corner they sit in
 
