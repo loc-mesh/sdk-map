@@ -11,7 +11,7 @@
  * as one in package.json so a bundler does not tree-shake it away.
  */
 
-import { MeshMap, type MeshMapOptions } from './map.js';
+import { MeshMap, type MeshMapOptions, type ControlSetting, type ControlPosition } from './map.js';
 import type { Theme } from './theme.js';
 
 const NUMBER_ATTRS = ['zoom', 'pitch', 'bearing'] as const;
@@ -54,6 +54,13 @@ export class MeshMapElement extends HTMLElement {
       pois: attr('pois') !== 'false',
       buildings3d: attr('buildings-3d') === 'true',
       region: attr('region'),
+      // `navigation-control="bottom-left"`; a bare attribute means the usual corner.
+      controls: {
+        navigation: controlAttr(this, 'navigation-control'),
+        fullscreen: controlAttr(this, 'fullscreen-control'),
+        geolocate: controlAttr(this, 'geolocate-control'),
+        scale: controlAttr(this, 'scale-control'),
+      },
       onError: (error) => {
         // Reported as a DOM event as well as the callback, because an element
         // used declaratively has nowhere to put a callback.
@@ -82,6 +89,13 @@ export class MeshMapElement extends HTMLElement {
   whenReady(): Promise<void> {
     return this.starting ?? Promise.resolve();
   }
+}
+
+function controlAttr(el: HTMLElement, name: string): ControlSetting {
+  if (!el.hasAttribute(name)) return false;
+  const v = el.getAttribute(name);
+  if (v === 'false') return false;
+  return v ? (v as ControlPosition) : true;
 }
 
 if (typeof customElements !== 'undefined' && !customElements.get('mesh-map')) {

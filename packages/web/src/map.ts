@@ -39,10 +39,38 @@
 // ⚠️ Named import, never a default: v6 removed the default export, and if this
 // package ever does move to 6 the default form compiles and is undefined at
 // runtime.
-import { Map as MapLibreMap } from 'maplibre-gl';
+import {
+  Map as MapLibreMap,
+  NavigationControl,
+  FullscreenControl,
+  GeolocateControl,
+  ScaleControl,
+  type ControlPosition,
+  type IControl,
+} from 'maplibre-gl';
 
 /** The style document shape, taken from the library rather than named separately. */
 type StyleSpecification = ReturnType<MapLibreMap['getStyle']>;
+
+/** A corner of the map: `top-left`, `top-right`, `bottom-left` or `bottom-right`. */
+export type { ControlPosition };
+
+/**
+ * One of the standard buttons. `true` puts it in its usual corner, a corner
+ * name puts it there, and `false` or leaving it out means no button.
+ */
+export type ControlSetting = boolean | ControlPosition;
+
+export interface MeshMapControls {
+  /** Zoom in, zoom out, and a compass that turns the map back to north and flat when clicked. Usual corner: top-right. */
+  navigation?: ControlSetting;
+  /** Fill the screen with the map. Usual corner: top-right. */
+  fullscreen?: ControlSetting;
+  /** Centre on the device's own location, with the browser's permission. Usual corner: top-right. */
+  geolocate?: ControlSetting;
+  /** A distance scale bar. Usual corner: bottom-left. */
+  scale?: ControlSetting;
+}
 import { Credential, transformRequest, type TokenMinter } from './credentials.js';
 import { discover, type Published } from './discovery.js';
 import { classify, type MeshMapError } from './errors.js';
@@ -95,6 +123,12 @@ export interface MeshMapOptions {
    */
   rateLimitNotice?: boolean;
 
+  /**
+   * The standard buttons, each in the corner you choose. None by default. For
+   * anything else, add a MapLibre control yourself with `map.map.addControl`.
+   */
+  controls?: MeshMapControls;
+
   /** Told why the map is not drawing. Strongly recommended — see `errors.ts`. */
   onError?: (error: MeshMapError) => void;
 }
@@ -117,6 +151,12 @@ export class MeshMap {
   private notice: HTMLDivElement | undefined;
   private noticeTimer: ReturnType<typeof setInterval> | undefined;
   private unsubscribeGate: (() => void) | undefined;
+  // What the SERVICE put on the map, as opposed to what the page added. Needed
+  // so a theme switch can carry the page's own layers, sources and images
+  // across — see `setTheme`.
+  private meshSources = new Set<string>();
+  private meshLayers = new Set<string>();
+  private meshImages = new Set<string>();
 
   private constructor(args: {
     map: MapLibreMap;
@@ -195,6 +235,12 @@ export class MeshMap {
 
     self.unsubscribeGate = gate.subscribe((state, resumesAt) => self.onGate(state, resumesAt));
 
+    // Recorded before the page can add anything: the page only gets the map
+    // once this function returns, and `load` fires after the style and sprite.
+    map.once('load', () => self.recordMeshStyle());
+
+    addControls(map, options.controls);
+
     if (options.autoTheme && pair) self.startAutoTheme(pair);
     return self;
   }
@@ -204,10 +250,82 @@ export class MeshMap {
     if (this.disposed || theme === this.theme) return;
     this.theme = theme;
     const url = styleUrl(this.options.tilesBaseUrl.replace(/\/$/, ''), this.published, theme, this.options);
+    // 🔴 THE PAGE'S OWN LAYERS MUST SURVIVE THIS. A new style replaces every
+    // source, layer and image on the map, so before 1.1.0 a theme switch —
+    // including the automatic one at dusk — silently removed every pin a page
+    // had drawn, while the documentation promised the opposite. Measured
+    // 2026-11-26. Whatever the service did not put there is carried across.
+    const images = this.userImages();
+    const ready = new Promise<void>((resolve) => this.map.once('style.load', () => resolve()));
     // `diff: false` because the two documents share no layer ids worth
     // reconciling; a full swap is both faster and more predictable.
-    this.map.setStyle(url, { diff: false });
-    await new Promise<void>((resolve) => this.map.once('styledata', () => resolve()));
+    this.map.setStyle(url, {
+      diff: false,
+      transformStyle: (previous, next) => this.carryAcross(previous, next),
+    });
+    await ready;
+    for (const { id, image } of images) {
+      if (!this.map.hasImage(id)) {
+        this.map.addImage(id, image.data, { pixelRatio: image.pixelRatio, sdf: image.sdf });
+      }
+    }
+  }
+
+  private recordMeshStyle(): void {
+    const style = this.map.getStyle();
+    this.meshSources = new Set(Object.keys(style.sources ?? {}));
+    this.meshLayers = new Set((style.layers ?? []).map((l) => l.id));
+    this.meshImages = new Set(this.map.listImages());
+  }
+
+  /** Images the page added, captured before a style swap discards them. */
+  private userImages(): { id: string; image: NonNullable<ReturnType<MapLibreMap['getImage']>> }[] {
+    const out: { id: string; image: NonNullable<ReturnType<MapLibreMap['getImage']>> }[] = [];
+    for (const id of this.map.listImages()) {
+      if (this.meshImages.has(id)) continue;
+      const image = this.map.getImage(id);
+      if (image) out.push({ id, image });
+    }
+    return out;
+  }
+
+  /**
+   * The new theme's style, plus every source and layer the page added to the
+   * old one. A page layer keeps its place relative to the service's layers: it
+   * goes in front of whichever service layer followed it before.
+   */
+  private carryAcross(
+    previous: StyleSpecification | undefined,
+    next: StyleSpecification,
+  ): StyleSpecification {
+    const meshSources = this.meshSources;
+    const meshLayers = this.meshLayers;
+    // The next style is the service's; record it now so the following switch
+    // knows what is ours.
+    this.meshSources = new Set(Object.keys(next.sources ?? {}));
+    this.meshLayers = new Set((next.layers ?? []).map((l) => l.id));
+    if (!previous) return next;
+
+    const sources = { ...next.sources };
+    for (const [id, source] of Object.entries(previous.sources ?? {})) {
+      if (!meshSources.has(id) && !(id in sources)) {
+        sources[id] = source;
+        this.meshSources.delete(id);
+      }
+    }
+
+    const layers = [...(next.layers ?? [])];
+    const prev = previous.layers ?? [];
+    prev.forEach((layer, i) => {
+      if (meshLayers.has(layer.id) || layers.some((l) => l.id === layer.id)) return;
+      const following = prev.slice(i + 1).find((l) => meshLayers.has(l.id));
+      const at = following ? layers.findIndex((l) => l.id === following.id) : -1;
+      if (at === -1) layers.push(layer);
+      else layers.splice(at, 0, layer);
+      this.meshLayers.delete(layer.id);
+    });
+
+    return { ...next, sources, layers };
   }
 
   /** The theme currently painted. */
@@ -309,6 +427,31 @@ function gatedTransform(
     if (resourceType === 'Tile' && url.startsWith(origin)) return { url: rewrite(out.url) };
     return out;
   };
+}
+
+const USUAL_CORNER: Record<keyof MeshMapControls, ControlPosition> = {
+  navigation: 'top-right',
+  fullscreen: 'top-right',
+  geolocate: 'top-right',
+  scale: 'bottom-left',
+};
+
+const CORNERS = new Set<string>(['top-left', 'top-right', 'bottom-left', 'bottom-right']);
+
+function addControls(map: MapLibreMap, controls: MeshMapControls | undefined): void {
+  if (!controls) return;
+  const make: Record<keyof MeshMapControls, () => IControl> = {
+    navigation: () => new NavigationControl({ visualizePitch: true }),
+    fullscreen: () => new FullscreenControl(),
+    geolocate: () => new GeolocateControl({ trackUserLocation: true }),
+    scale: () => new ScaleControl(),
+  };
+  for (const name of Object.keys(make) as (keyof MeshMapControls)[]) {
+    const setting = controls[name];
+    if (!setting) continue;
+    const corner = setting === true || !CORNERS.has(setting) ? USUAL_CORNER[name] : setting;
+    map.addControl(make[name](), corner);
+  }
 }
 
 function resolvePair(auto: MeshMapOptions['autoTheme']): { day: Theme; night: Theme } | undefined {

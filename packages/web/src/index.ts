@@ -10,7 +10,31 @@
  * by design ADR 0059 §4 and is not an oversight.
  */
 
-export { MeshMap, type MeshMapOptions } from './map.js';
+export {
+  MeshMap,
+  type MeshMapOptions,
+  type MeshMapControls,
+  type ControlSetting,
+  type ControlPosition,
+} from './map.js';
+
+// The MapLibre classes a page needs to draw its own things (pins, popups, extra
+// buttons), re-exported so they come from THE SAME copy of MapLibre the map was
+// built with. Importing them from 'maplibre-gl' directly can resolve a different
+// major version (see the pin note in map.ts), which compiles and then misbehaves.
+export {
+  Marker,
+  Popup,
+  LngLatBounds,
+  NavigationControl,
+  FullscreenControl,
+  GeolocateControl,
+  ScaleControl,
+  type IControl,
+  type MapMouseEvent,
+  type MapGeoJSONFeature,
+  type GeoJSONSource,
+} from 'maplibre-gl';
 export { discover, type Published } from './discovery.js';
 export { Credential, type TokenMinter, type MintedToken } from './credentials.js';
 export {
