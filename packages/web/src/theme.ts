@@ -1,15 +1,39 @@
 /**
  * Which theme to paint, and when to change it.
  *
- * The Mesh tiles service paints five: two for daylight, two for night, and one
- * neutral for when the application's own data has to be the thing that stands
- * out. They are requested per style document; the squares, fonts and icons are
- * shared between them, so switching costs one small document and no new tile
- * requests.
+ * A theme is a list of colours. The service publishes named PRESETS, and a page
+ * may supply its own colours laid over one. Both are requested per style
+ * document; the squares, fonts and icons are shared between them, so switching
+ * costs one small document and no new tile requests.
+ *
+ * ⚠️ A PRESET NAME IS A STRING, NOT A FIXED LIST. Presets are added to the
+ * service over time and the service publishes which exist; a union type here
+ * would refuse a preset the service already serves until this package was
+ * released again.
  */
 
-export type Theme = 'light' | 'white' | 'grayscale' | 'dark' | 'black';
+/** A preset name: 'light', 'white', 'grayscale', 'dark', 'black', or any preset added since. */
+export type Theme = string;
 
+/**
+ * Your own theme: a preset to start from, and only the colours you want
+ * different. The colour names and every current value are published at
+ * the tiles service, at /api/themes/{preset}.
+ */
+export interface ThemeColours {
+  /** The preset to start from. Leave it out for the service's default. */
+  base?: Theme;
+  /** Colour name to colour: hex, rgb(a) or hsl(a). */
+  colours: Record<string, unknown>;
+}
+
+/**
+ * What a page may pass as a theme: a preset name, its own colours, or the
+ * address of a JSON file holding its own colours.
+ */
+export type ThemeSetting = Theme | ThemeColours;
+
+/** The five presets every service has published since 1.0. Use the service's list for the current set. */
 export const DAY_THEMES: readonly Theme[] = ['light', 'white'];
 export const NIGHT_THEMES: readonly Theme[] = ['dark', 'black'];
 
@@ -69,11 +93,11 @@ export function isNight(when: Date, latitude: number, longitude: number): boolea
  * between. Keeping both in the caller's hands matters: "dark" and "black" are
  * genuinely different choices, and so are "light" and "white".
  */
-export function themeFor(
+export function themeFor<T = Theme>(
   when: Date,
   latitude: number,
   longitude: number,
-  pair: { day: Theme; night: Theme },
-): Theme {
+  pair: { day: T; night: T },
+): T {
   return isNight(when, latitude, longitude) ? pair.night : pair.day;
 }

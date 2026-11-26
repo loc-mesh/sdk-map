@@ -23,6 +23,10 @@ export interface Published {
   version: string;
   /** Themes this service says it can paint, straight from the service. */
   themes: string[];
+  /** The theme the service paints when none is named. */
+  defaultTheme: string;
+  /** Night presets, first is the one used when a page turns on day/night without naming one. */
+  nightThemes: string[];
 }
 
 interface RegionRow {
@@ -90,11 +94,14 @@ export async function discover(
   // Themes are read rather than hard-coded: the service is the only thing that
   // knows which it can actually paint, and a list baked in here would be a
   // second source of truth that goes stale on their next release.
-  const themes = (body.themes as { available?: unknown } | undefined)?.available;
+  const block = body.themes as { available?: unknown; default?: unknown; night?: unknown } | undefined;
+  const themes = block?.available;
 
   return {
     region: wanted.region,
     version: wanted.currentVersion,
     themes: Array.isArray(themes) ? themes.map(String) : [],
+    defaultTheme: typeof block?.default === 'string' ? block.default : 'light',
+    nightThemes: Array.isArray(block?.night) ? block.night.map(String) : ['dark'],
   };
 }

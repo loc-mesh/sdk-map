@@ -47,11 +47,20 @@ map.map.addSource('my-route', { type: 'geojson', data: myLineString });
 
 ## Themes
 
-Five, painted by the service: `light` and `white` for daylight, `dark` and `black` for night, and `grayscale` for when your own data has to be the thing that stands out.
+A theme is a list of colours. The `theme` option takes one of three things:
 
 ```js
-await map.setTheme('dark');
+MeshMap.create({ ..., theme: 'dark' });                       // a preset, by name
+MeshMap.create({ ..., theme: { base: 'dark', colours: { water: '#1E2A44', highway: '#4F8BFF' } } });  // your own colours over a preset
+MeshMap.create({ ..., theme: '/brand/map-theme.json' });       // the same, from a file
+await map.setTheme('black');                                   // change it later
 ```
+
+**Leave `theme` out and the service's default is painted.** The presets today are `light` and `white` for daylight, `dark` and `black` for night, and `grayscale` for when your own data has to stand out. **More are added over time**; the tiles service lists the current set at `/api`, and the control picks new ones up with no upgrade.
+
+**Your own theme only lists what is different.** Every colour name, with each preset's current value, is at `<tiles service>/api/themes/<preset>` — copy that, keep what you want to change, and set `base` to the preset you started from. Leave `base` out to start from the default.
+
+⚠️ **A mistake never blanks the map.** An unknown preset or an unreadable file paints the default and reports `unknown_theme` or `theme_unreadable` through `onError`; a misspelt colour name is skipped and reported as `theme_colours_ignored`, and the rest still apply.
 
 Switching costs one small document and **no new tile requests** — the squares, fonts and icons are shared between themes. **Your own sources, layers and images are kept**, in the same order, from 1.1.0; before that a switch, including the automatic one at dusk, removed them.
 
@@ -59,7 +68,10 @@ Switching costs one small document and **no new tile requests** — the squares,
 
 ```js
 MeshMap.create({ ..., autoTheme: { day: 'light', night: 'black' } });
+MeshMap.create({ ..., theme: '/brand/day.json', autoTheme: true });   // your day theme, the service's night preset
 ```
+
+Either side may be a preset name, your own colours, or a file.
 
 ⚠️ **It switches at civil twilight, not at sunset.** Sunset leaves a driver on a bright white screen through the whole of dusk and then flips to night while it is still light outside. The threshold is the sun six degrees below the horizon — roughly when you would turn headlights on.
 
@@ -132,7 +144,7 @@ document.addEventListener('mesh-map-error', (e) => console.warn(e.detail.code));
 | `getMapToken` | — | — | Mint a short-lived token from your backend |
 | `center` | `center` | `0,0` | `[lng, lat]` in code; `"lng,lat"` as an attribute |
 | `zoom` / `pitch` / `bearing` | same | `11` / `0` / `0` | |
-| `theme` | `theme` | `light` | One of the five |
+| `theme` | `theme` | the service default | A preset name, your own colours, or a theme file address |
 | `autoTheme` | `auto-theme` | off | Day/night at civil twilight |
 | `pois` | `pois` | `true` | Shop and café labels |
 | `buildings3d` | `buildings-3d` | `false` | Needs tilt and zoom 14+ |

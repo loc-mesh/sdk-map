@@ -50,4 +50,6 @@ export {
   DAY_THEMES,
   NIGHT_THEMES,
   type Theme,
+  type ThemeColours,
+  type ThemeSetting,
 } from './theme.js';

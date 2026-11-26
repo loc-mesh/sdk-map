@@ -74,7 +74,7 @@ export interface MeshMapControls {
 import { Credential, transformRequest, type TokenMinter } from './credentials.js';
 import { discover, type Published } from './discovery.js';
 import { classify, type MeshMapError } from './errors.js';
-import { themeFor, type Theme } from './theme.js';
+import { themeFor, type Theme, type ThemeColours, type ThemeSetting } from './theme.js';
 import { gate, type GateState } from './pause.js';
 import { registerTileProtocol, rewrite } from './tile-fetch.js';
 
@@ -99,14 +99,21 @@ export interface MeshMapOptions {
   pitch?: number;
   bearing?: number;
 
-  /** One of the five the service paints. Unknown values fall back to `light`. */
-  theme?: Theme;
+  /**
+   * The theme: a preset name ('light', 'dark', …), your own colours over a
+   * preset (`{ base: 'dark', colours: { water: '#1E2A44' } }`), or the address
+   * of a JSON file holding that. Leave it out for the service's default.
+   * ⚠️ An unknown preset or an unreadable file paints the default and reports
+   * why through `onError` — it never leaves a blank map.
+   */
+  theme?: ThemeSetting;
   /**
    * Switch between a day and a night theme at civil twilight, for the map's
    * current centre. Off by default — a map that changes colour unasked is a
-   * surprise.
+   * surprise. `true` pairs your `theme` (or the default) with the service's
+   * first night preset; or name both, and either may be your own colours.
    */
-  autoTheme?: boolean | { day: Theme; night: Theme };
+  autoTheme?: boolean | { day: ThemeSetting; night: ThemeSetting };
 
   /** Shop and café labels. On by default. */
   pois?: boolean;
@@ -133,7 +140,6 @@ export interface MeshMapOptions {
   onError?: (error: MeshMapError) => void;
 }
 
-const DEFAULT_PAIR = { day: 'light' as Theme, night: 'dark' as Theme };
 
 export class MeshMap {
   /** The MapLibre map, for anything this control does not wrap. */
@@ -145,7 +151,7 @@ export class MeshMap {
   private readonly origin: string;
   private readonly onError: (e: MeshMapError) => void;
   private readonly options: MeshMapOptions;
-  private theme: Theme;
+  private theme: ThemeSetting | undefined;
   private autoThemeTimer: ReturnType<typeof setInterval> | undefined;
   private disposed = false;
   private notice: HTMLDivElement | undefined;
@@ -163,7 +169,7 @@ export class MeshMap {
     published: Published;
     credential: Credential;
     origin: string;
-    theme: Theme;
+    theme: ThemeSetting | undefined;
     options: MeshMapOptions;
     onError: (e: MeshMapError) => void;
   }) {
@@ -204,15 +210,15 @@ export class MeshMap {
       : await Credential.fromMinter(options.getMapToken!, onError);
 
     const centre = options.center ?? [0, 0];
-    const pair = resolvePair(options.autoTheme);
-    const theme =
-      options.autoTheme && pair
-        ? themeFor(new Date(), centre[1], centre[0], pair)
-        : (options.theme ?? 'light');
+    const pair = resolvePair(options, published);
+    const theme: ThemeSetting | undefined = pair
+      ? themeFor(new Date(), centre[1], centre[0], pair)
+      : options.theme;
+    const painted = await resolveTheme(theme, published, onError);
 
     const map = new MapLibreMap({
       container: options.container,
-      style: styleUrl(baseUrl, published, theme, options),
+      style: styleUrl(baseUrl, published, painted, options),
       center: centre,
       zoom: options.zoom ?? 11,
       pitch: options.pitch ?? 0,
@@ -239,17 +245,24 @@ export class MeshMap {
     // once this function returns, and `load` fires after the style and sprite.
     map.once('load', () => self.recordMeshStyle());
 
+    // Tell the page when the service could not use part of its theme. The map
+    // still draws, so this is the only way anyone learns the water is not the
+    // colour they asked for because a name was misspelt.
+    map.on('style.load', () => self.reportThemeProblems());
+
     addControls(map, options.controls);
 
-    if (options.autoTheme && pair) self.startAutoTheme(pair);
+    if (pair) self.startAutoTheme(pair);
     return self;
   }
 
   /** Paint a different theme. Keeps the view, the pinned version and your own layers. */
-  async setTheme(theme: Theme): Promise<void> {
-    if (this.disposed || theme === this.theme) return;
+  async setTheme(theme: ThemeSetting | undefined): Promise<void> {
+    if (this.disposed || themeKey(theme) === themeKey(this.theme)) return;
     this.theme = theme;
-    const url = styleUrl(this.options.tilesBaseUrl.replace(/\/$/, ''), this.published, theme, this.options);
+    const painted = await resolveTheme(theme, this.published, this.onError);
+    if (this.disposed) return;
+    const url = styleUrl(this.options.tilesBaseUrl.replace(/\/$/, ''), this.published, painted, this.options);
     // 🔴 THE PAGE'S OWN LAYERS MUST SURVIVE THIS. A new style replaces every
     // source, layer and image on the map, so before 1.1.0 a theme switch —
     // including the automatic one at dusk — silently removed every pin a page
@@ -329,8 +342,22 @@ export class MeshMap {
   }
 
   /** The theme currently painted. */
-  get currentTheme(): Theme {
-    return this.theme;
+  get currentTheme(): ThemeSetting {
+    return this.theme ?? this.published.defaultTheme;
+  }
+
+  private reportThemeProblems(): void {
+    const meta = (this.map.getStyle().metadata ?? {}) as Record<string, unknown>;
+    const ignored = meta['locate2u:ignored-colours'];
+    if (Array.isArray(ignored) && ignored.length) {
+      this.onError({
+        code: 'theme_colours_ignored',
+        message:
+          `These theme colours were not used: ${ignored.join(', ')}. Check each name against ` +
+          '/api/themes/<preset> on the tiles service, and that each value is a hex, rgb or hsl colour.',
+        fatal: false,
+      });
+    }
   }
 
   /**
@@ -400,14 +427,14 @@ export class MeshMap {
     this.notice = undefined;
   }
 
-  private startAutoTheme(pair: { day: Theme; night: Theme }): void {
+  private startAutoTheme(pair: { day: ThemeSetting | undefined; night: ThemeSetting }): void {
     // Every five minutes is far more often than needed to land the switch
     // within a few minutes of civil twilight, and costs nothing.
     this.autoThemeTimer = setInterval(() => {
       if (this.disposed) return;
       const c = this.map.getCenter();
       const want = themeFor(new Date(), c.lat, c.lng, pair);
-      if (want !== this.theme) void this.setTheme(want);
+      if (themeKey(want) !== themeKey(this.theme)) void this.setTheme(want);
     }, 5 * 60 * 1000);
   }
 }
@@ -454,9 +481,105 @@ function addControls(map: MapLibreMap, controls: MeshMapControls | undefined): v
   }
 }
 
-function resolvePair(auto: MeshMapOptions['autoTheme']): { day: Theme; night: Theme } | undefined {
+function resolvePair(
+  options: MeshMapOptions,
+  published: Published,
+): { day: ThemeSetting | undefined; night: ThemeSetting } | undefined {
+  const auto = options.autoTheme;
   if (!auto) return undefined;
-  return auto === true ? DEFAULT_PAIR : auto;
+  if (auto === true) return { day: options.theme, night: published.nightThemes[0] ?? 'dark' };
+  return auto;
+}
+
+/** What the style request will carry: a preset name, colours, or neither. */
+interface Painted {
+  name?: Theme;
+  colours?: Record<string, unknown>;
+}
+
+const themeKey = (t: ThemeSetting | undefined): string => JSON.stringify(t ?? null);
+
+/** Theme files already fetched this session, by address. */
+const themeFiles = new Map<string, Promise<ThemeColours>>();
+
+/** A plain preset name, as opposed to the address of a theme file. */
+const isPresetName = (s: string) => /^[a-z0-9][a-z0-9_-]*$/i.test(s);
+
+/**
+ * Turn whatever the page passed into what the style request carries.
+ *
+ * ⚠️ NOTHING HERE THROWS. A theme is decoration, and a mistake in one must
+ * never cost anyone their map. An unknown preset or an unreadable file is
+ * reported through `onError` and the service's default is painted.
+ */
+async function resolveTheme(
+  setting: ThemeSetting | undefined,
+  published: Published,
+  onError: (e: MeshMapError) => void,
+): Promise<Painted> {
+  if (setting === undefined || setting === null) return {};
+
+  let own: ThemeColours | undefined;
+  if (typeof setting === 'string') {
+    if (isPresetName(setting)) return checkPreset(setting, published, onError);
+    try {
+      let file = themeFiles.get(setting);
+      if (!file) {
+        file = fetch(setting).then(async (res) => {
+          if (!res.ok) throw new Error(`it answered ${res.status}`);
+          return (await res.json()) as ThemeColours;
+        });
+        themeFiles.set(setting, file);
+      }
+      own = await file;
+    } catch (err) {
+      themeFiles.delete(setting);
+      onError({
+        code: 'theme_unreadable',
+        message: `The theme file ${setting} could not be read: ${(err as Error).message}. Painting the default theme.`,
+        fatal: false,
+      });
+      return {};
+    }
+  } else {
+    own = setting;
+  }
+
+  if (!own || typeof own !== 'object' || !own.colours || typeof own.colours !== 'object') {
+    onError({
+      code: 'theme_unreadable',
+      message:
+        'A theme of your own needs a "colours" object, for example ' +
+        '{ "base": "dark", "colours": { "water": "#1E2A44" } }. Painting the default theme.',
+      fatal: false,
+    });
+    return {};
+  }
+  const base = own.base ? checkPreset(own.base, published, onError) : {};
+  return { ...base, colours: own.colours };
+}
+
+function checkPreset(name: string, published: Published, onError: (e: MeshMapError) => void): Painted {
+  // An empty list means an older service that published none: trust the name.
+  if (published.themes.length && !published.themes.includes(name)) {
+    onError({
+      code: 'unknown_theme',
+      message:
+        `There is no "${name}" theme. The service offers: ${published.themes.join(', ')}. ` +
+        `Painting ${published.defaultTheme}.`,
+      fatal: false,
+    });
+    return {};
+  }
+  return { name };
+}
+
+/** base64url, because the colours travel in a URL. */
+function encodeColours(colours: Record<string, unknown>): string {
+  const bytes = new TextEncoder().encode(JSON.stringify(colours));
+  let bin = '';
+  for (const byte of bytes) bin += String.fromCharCode(byte);
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
 /**
@@ -468,13 +591,15 @@ function resolvePair(auto: MeshMapOptions['autoTheme']): { day: Theme; night: Th
 function styleUrl(
   baseUrl: string,
   published: Published,
-  theme: Theme,
+  theme: Painted,
   options: MeshMapOptions,
 ): string {
   const u = new URL(
     `${baseUrl}/v1/${encodeURIComponent(published.region)}/${encodeURIComponent(published.version)}/style.json`,
   );
-  u.searchParams.set('flavour', theme);
+  // Neither set means the service's default, which is the point of leaving it out.
+  if (theme.name) u.searchParams.set('flavour', theme.name);
+  if (theme.colours) u.searchParams.set('colours', encodeColours(theme.colours));
   if (options.pois === false) u.searchParams.set('pois', 'false');
   if (options.buildings3d === true) u.searchParams.set('buildings3d', 'true');
   return u.toString();
