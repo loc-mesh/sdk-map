@@ -53,7 +53,7 @@ Five, painted by the service: `light` and `white` for daylight, `dark` and `blac
 await map.setTheme('dark');
 ```
 
-Switching costs one small document and **no new tile requests** — the squares, fonts and icons are shared between themes.
+Switching costs one small document and **no new tile requests** — the squares, fonts and icons are shared between themes. **Your own sources, layers and images are kept**, in the same order, from 1.1.0; before that a switch, including the automatic one at dusk, removed them.
 
 ### Day and night, automatically
 
@@ -137,7 +137,29 @@ document.addEventListener('mesh-map-error', (e) => console.warn(e.detail.code));
 | `pois` | `pois` | `true` | Shop and café labels |
 | `buildings3d` | `buildings-3d` | `false` | Needs tilt and zoom 14+ |
 | `region` | `region` | first published | Pin to a named region |
+| `controls` | `navigation-control`, `fullscreen-control`, `geolocate-control`, `scale-control` | none | Standard buttons, each in the corner you name |
 | `onError` | — | logs | Strongly recommended |
+
+## Buttons, and which corner they sit in
+
+```js
+MeshMap.create({
+  ...,
+  controls: { navigation: 'bottom-right', fullscreen: 'top-right', geolocate: 'bottom-right', scale: true },
+});
+```
+
+Each takes `top-left`, `top-right`, `bottom-left` or `bottom-right`; `true` means its usual corner. On the element: `<mesh-map navigation-control="bottom-left" fullscreen-control>`. The OpenStreetMap credit stays bottom-right and cannot be moved.
+
+## Tilting and rotating
+
+`pitch` (0 is straight down, up to 85) and `bearing` (degrees from north) set the starting view, and `map.map.easeTo({ pitch: 60, bearing: 90 })` changes it. People tilt and rotate by dragging with the right mouse button, or with two fingers on a touch screen. The compass on the navigation button turns the map back to north.
+
+## Pins, groups, pop-ups and events
+
+`Marker`, `Popup`, `LngLatBounds` and the button controls are re-exported from this package. Import them from here rather than from `maplibre-gl`, so they come from the same copy of MapLibre the map uses.
+
+Worked examples are at **https://docs.mesh.locate2u.app/modules/maps/recipes/**: your own SVG pins, colour by type, grouping thousands of pins, hover, click and selected, and following a driver in a tilted view.
 
 ## What this package does not do
 
