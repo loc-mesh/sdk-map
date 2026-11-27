@@ -97,3 +97,27 @@ describe('several regions', () => {
   });
 });
 
+
+describe('the world map', () => {
+  const withWorld = { ...API, world: { currentVersion: '20261126-eeeeeeee', maxZoom: 7 } };
+
+  // ⭐ One map from Brisbane out to the planet and in again over Tokyo, with
+  // nothing to switch: the world style already draws every region.
+  it('is what a page that names no region gets, pinned to an explicit build', async () => {
+    const p = await discover('https://x', { near: [153.02, -27.47], fetchImpl: ok(withWorld) });
+    expect(p.region).toBe('world');
+    expect(p.version).toBe('20261126-eeeeeeee');
+    expect(p.regions.map((r) => r.region)).toEqual(['australia']);
+  });
+
+  it('gives way to a region the page pinned, and remembers how to get back', async () => {
+    const p = await discover('https://x', { region: 'australia', fetchImpl: ok(withWorld) });
+    expect(p.region).toBe('australia');
+    expect(p.worldVersion).toBe('20261126-eeeeeeee');
+  });
+
+  it('is not assumed when the service publishes none', async () => {
+    const p = await discover('https://x', { fetchImpl: ok({ ...API, world: null }) });
+    expect(p.region).toBe('australia');
+  });
+});
