@@ -28,7 +28,14 @@ export interface RegionInfo {
 export interface Published {
   /** Every region this environment serves. */
   regions: RegionInfo[];
+  /**
+   * The region whose style is drawn, or "world" — the whole planet with every
+   * region on top, which is what a page that names no region gets whenever the
+   * service publishes a world map.
+   */
   region: string;
+  /** The world map's version, when the service publishes one; `setRegion('world')` returns to it. */
+  worldVersion?: string;
   /** The explicit build version, never the word "current" — see `pin`. */
   version: string;
   /** Themes this service says it can paint, straight from the service. */
@@ -128,10 +135,17 @@ export async function discover(
   const block = body.themes as { available?: unknown; default?: unknown; night?: unknown } | undefined;
   const themes = block?.available;
 
+  // ⭐ THE WORLD MAP, WHEN THERE IS ONE AND THE PAGE DID NOT PIN A REGION.
+  // Its style draws the planet and every region on top, so the map can be
+  // zoomed out and panned from one country to another with nothing to switch.
+  const world = body.world as { currentVersion?: unknown } | null | undefined;
+  const whole = !opts.region && typeof world?.currentVersion === 'string';
+
   return {
     regions,
-    region: wanted.region,
-    version: wanted.currentVersion,
+    ...(typeof world?.currentVersion === 'string' ? { worldVersion: world.currentVersion } : {}),
+    region: whole ? 'world' : wanted.region,
+    version: whole ? (world!.currentVersion as string) : wanted.currentVersion,
     themes: Array.isArray(themes) ? themes.map(String) : [],
     defaultTheme: typeof block?.default === 'string' ? block.default : 'light',
     nightThemes: Array.isArray(block?.night) ? block.night.map(String) : ['dark'],

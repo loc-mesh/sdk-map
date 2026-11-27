@@ -246,7 +246,8 @@ export class MeshMap {
     // is a separate map build, so a map that started over Sydney and is panned
     // to London would otherwise show London as empty ocean. Checked when a move
     // ENDS, never during one: a style swap mid-drag would stall the gesture.
-    if (!options.region && published.regions.length > 1) {
+    // ⭐ Not needed at all on the world map, which already draws every region.
+    if (!options.region && published.region !== 'world' && published.regions.length > 1) {
       map.on('moveend', () => void self.followRegion());
     }
 
@@ -287,15 +288,24 @@ export class MeshMap {
     return this._published.region;
   }
 
-  /** Show another published region. Keeps the theme and your own layers. */
+  /**
+   * Show one published region, or 'world' for the planet with every region on
+   * top (the default whenever the service has a world map). Keeps the theme
+   * and your own layers.
+   */
   async setRegion(region: string): Promise<void> {
-    const next = this._published.regions.find((r) => r.region === region);
+    const world = this._published.worldVersion;
+    const next =
+      region === 'world' && world
+        ? { region: 'world', version: world }
+        : this._published.regions.find((r) => r.region === region);
     if (this.disposed || !next || next.region === this._published.region) return;
     this._published = { ...this._published, region: next.region, version: next.version };
     await this.restyle();
   }
 
   private async followRegion(): Promise<void> {
+    if (this._published.region === 'world') return;
     const c = this.map.getCenter();
     const current = this._published.regions.find((r) => r.region === this._published.region);
     const inside = (b: [number, number, number, number] | null) =>

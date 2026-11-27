@@ -148,13 +148,13 @@ document.addEventListener('mesh-map-error', (e) => console.warn(e.detail.code));
 | `autoTheme` | `auto-theme` | off | Day/night at civil twilight |
 | `pois` | `pois` | `true` | Shop and café labels |
 | `buildings3d` | `buildings-3d` | `false` | Needs tilt and zoom 14+ |
-| `region` | `region` | the region at `center` | Pin to one region; left out, the map follows the view between regions |
+| `region` | `region` | the whole world | Pin to one region; left out, the map shows the world with every region on top |
 | `controls` | `navigation-control`, `fullscreen-control`, `geolocate-control`, `scale-control` | none | Standard buttons, each in the corner you name |
 | `onError` | — | logs | Strongly recommended |
 
 ## Regions
 
-Each region the platform serves (Australia, the United Kingdom and Japan today) is a separate map build. **Leave `region` out** and the map shows the region containing its `center`, and switches when the person pans into another region; your own layers and the theme are kept. **Set `region`** to stay on one. `map.region` says which is shown, `map.setRegion(name)` changes it, and `map.published.regions` lists them with their bounds.
+Each region the platform serves (Australia, the United Kingdom and Japan today) is a detailed map build, drawn on top of a low-detail map of the whole world. **Leave `region` out** and you get all of it in one map: zoom out from Brisbane to the whole planet, pan to Tokyo, and zoom in again, with every region's street-level detail where it exists and coastlines, borders, cities and major roads everywhere else. Up to zoom 7 the world map is drawn; from zoom 7 each region's own detail covers it inside that region. **Set `region`** to draw one region only (still with the world beneath it). `map.region` says which is shown (`'world'` for the whole map), `map.setRegion(name)` changes it and `map.setRegion('world')` goes back, and `map.published.regions` lists the regions with their bounds.
 
 ## Buttons, and which corner they sit in
 
